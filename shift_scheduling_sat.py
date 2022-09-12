@@ -188,12 +188,12 @@ def add_soft_sum_constraint(model, works, hard_min, soft_min, min_cost,
 def solve_shift_scheduling(params, output_proto):
     """Solves the shift scheduling problem."""
     # Data
-    num_employees = 10 
-    num_weeks = 1
+    num_players = 12 
+    num_games = 1
     shifts = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
-    # Fixed assignment: (employee, shift, day).
-    # This fixes the first 2 days of the schedule.
+    # Fixed assignment: (player, shift, inning).
+    # This fixes the first 2 innings of the schedule.
     fixed_assignments = [
         (0, 1, 0),
         (1, 1, 1),
@@ -202,10 +202,10 @@ def solve_shift_scheduling(params, output_proto):
         (4, 1, 4),
     ]
 
-    # Request: (employee, shift, day, weight)
-    # A negative weight indicates that the employee desire this assignment.
+    # Request: (player, shift, inning, weight)
+    # A negative weight indicates that the player desire this assignment.
     requests = [
-        # Employee 3 does not want to work on the first Saturday (negative weight
+        # Employee 3 does not want to work on the first Saturinning (negative weight
         # for the Off shift).
         (0, 6, 0, -2), # prefer SS
         (0, 6, 1, -2),
@@ -238,9 +238,9 @@ def solve_shift_scheduling(params, output_proto):
         (8, 2, 4, 2),
         (8, 2, 5, 2),
         (8, 2, 6, 2),
-        # Employee 5 wants a night shift on the second Thursday (negative weight).
+        # Employee 5 wants a night shift on the second Thursinning (negative weight).
         ##YK (5, 3, 1, -2),
-        # Employee 2 does not want a night shift on the first Friday (positive
+        # Employee 2 does not want a night shift on the first Friinning (positive
         # weight).
         ##YK (2, 3, 4, 4)
     ]
@@ -249,69 +249,67 @@ def solve_shift_scheduling(params, output_proto):
     #     (shift, hard_min, soft_min, min_penalty,
     #             soft_max, hard_max, max_penalty)
     shift_constraints = [
-        # One or two consecutive days of rest, this is a hard constraint.
+        # No two consecutive innings for DH 
+        (0, 1, 1, 0, 1, 1, 0),
+        # No two consecutive innings for IF 
         (3, 1, 1, 0, 1, 1, 0),
         (4, 1, 1, 0, 1, 1, 0),
         (5, 1, 1, 0, 1, 1, 0),
         (6, 1, 1, 0, 1, 1, 0),
-        # between 2 and 3 consecutive days of night shifts, 1 and 4 are
-        # possible but penalized.
-        ##YK (3, 1, 2, 20, 3, 4, 5),
+        # No three consecutive innings for OF 
+        (7, 1, 1, 0, 2, 2, 0),
+        (8, 1, 1, 0, 2, 2, 0),
+        (9, 1, 1, 0, 2, 2, 0),
     ]
 
-    # Weekly sum constraints on shifts days:
+    # Game sum constraints on shifts innings:
     #     (shift, hard_min, soft_min, min_penalty,
     #             soft_max, hard_max, max_penalty)
-    weekly_sum_constraints = [
-        # Constraints on rests per week.
-        (0, 0, 1, 7, 2, 2, 4),
+    game_sum_constraints = [
+        # Constraints on positions per game.
+        (0, 0, 1, 7, 2, 2, 4), # For 12 players roster, one should not be DH for 3 of more innings
         (1, 0, 0, 7, 1, 1, 4),
-        (2, 0, 0, 7, 3, 2, 4),
-        (3, 0, 0, 7, 2, 2, 4),
+        (2, 0, 0, 7, 2, 3, 4), # if necessary, one can catch for 3 innings
+        (3, 0, 0, 7, 2, 2, 4), # limit players on same positions for more than twice
         (4, 0, 0, 7, 2, 2, 4),
         (5, 0, 0, 7, 2, 2, 4),
         (6, 0, 0, 7, 2, 2, 4),
-        (7, 0, 0, 7, 2, 2, 4),
-        (8, 0, 0, 7, 2, 2, 4),
-        (9, 0, 0, 7, 2, 2, 4),
-        # At least 1 night shift per week (penalized). At most 4 (hard).
-        ##YK (3, 0, 1, 3, 4, 4, 0),
+        (7, 0, 0, 7, 2, 3, 4), # if necessary, one can OF for 3 innings
+        (8, 0, 0, 7, 2, 3, 4),
+        (9, 0, 0, 7, 2, 3, 4),
     ]
 
     # Penalized transitions:
     #     (previous_shift, next_shift, penalty (0 means forbidden))
     penalized_transitions = [
-        # Afternoon to night has a penalty of 4.
+        # After pitcher/catcher to catcher/pitcher has a penalty of 4.
         (1, 2, 4),
         (2, 1, 4),
-        # Night to morning is forbidden.
-        ##YK (3, 1, 0),
     ]
 
-    # daily demands for work shifts (morning, afternon, night) for each day
-    # of the week starting on Monday.
-    weekly_cover_demands = [
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1),  # Monday
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1),  # Tuesday
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1),  # Wednesday
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1),  # Thursday
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1),  # Friday
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1),  # Saturday
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1),  # Sunday
+    # Demands for shifts for each inning of the game .
+    game_cover_demands = [
+        (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 1st // DH is implicitly not required
+        (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 2nd
+        (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 3rd
+        (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 4th
+        (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 5th 
+        (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 6th 
+        (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 7th 
     ]
 
     # Penalty for exceeding the cover constraint per shift type.
-    excess_cover_penalties = (0, 5, 5, 5, 5, 5, 5, 5, 5, 5)
+    excess_cover_penalties = (5, 5, 5, 5, 5, 5, 5, 5, 5) # DH is implicity not required
 
-    num_days = num_weeks * 7
+    num_innings = num_games * 7
     num_shifts = len(shifts)
 
     model = cp_model.CpModel()
 
     work = {}
-    for e in range(num_employees):
+    for e in range(num_players):
         for s in range(num_shifts):
-            for d in range(num_days):
+            for d in range(num_innings):
                 work[e, s, d] = model.NewBoolVar('work%i_%i_%i' % (e, s, d))
 
     # Linear terms of the objective in a minimization context.
@@ -320,9 +318,9 @@ def solve_shift_scheduling(params, output_proto):
     obj_bool_vars = []
     obj_bool_coeffs = []
 
-    # Exactly one shift per day.
-    for e in range(num_employees):
-        for d in range(num_days):
+    # Exactly one shift per inning.
+    for e in range(num_players):
+        for d in range(num_innings):
             model.AddExactlyOne(work[e, s, d] for s in range(num_shifts))
 
     # Fixed assignments.
@@ -337,33 +335,33 @@ def solve_shift_scheduling(params, output_proto):
     # Shift constraints
     for ct in shift_constraints:
         shift, hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = ct
-        for e in range(num_employees):
-            works = [work[e, shift, d] for d in range(num_days)]
+        for e in range(num_players):
+            works = [work[e, shift, d] for d in range(num_innings)]
             variables, coeffs = add_soft_sequence_constraint(
                 model, works, hard_min, soft_min, min_cost, soft_max, hard_max,
                 max_cost,
-                'shift_constraint(employee %i, shift %i)' % (e, shift))
+                'shift_constraint(player %i, shift %i)' % (e, shift))
             obj_bool_vars.extend(variables)
             obj_bool_coeffs.extend(coeffs)
 
-    # Weekly sum constraints
-    for ct in weekly_sum_constraints:
+    # Game sum constraints
+    for ct in game_sum_constraints:
         shift, hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = ct
-        for e in range(num_employees):
-            for w in range(num_weeks):
+        for e in range(num_players):
+            for w in range(num_games):
                 works = [work[e, shift, d + w * 7] for d in range(7)]
                 variables, coeffs = add_soft_sum_constraint(
                     model, works, hard_min, soft_min, min_cost, soft_max,
                     hard_max, max_cost,
-                    'weekly_sum_constraint(employee %i, shift %i, week %i)' %
+                    'game_sum_constraint(player %i, shift %i, game %i)' %
                     (e, shift, w))
                 obj_int_vars.extend(variables)
                 obj_int_coeffs.extend(coeffs)
 
     # Penalized transitions
     for previous_shift, next_shift, cost in penalized_transitions:
-        for e in range(num_employees):
-            for d in range(num_days - 1):
+        for e in range(num_players):
+            for d in range(num_innings - 1):
                 transition = [
                     work[e, previous_shift, d].Not(), work[e, next_shift,
                                                            d + 1].Not()
@@ -372,7 +370,7 @@ def solve_shift_scheduling(params, output_proto):
                     model.AddBoolOr(transition)
                 else:
                     trans_var = model.NewBoolVar(
-                        'transition (employee=%i, day=%i)' % (e, d))
+                        'transition (player=%i, inning=%i)' % (e, d))
                     transition.append(trans_var)
                     model.AddBoolOr(transition)
                     obj_bool_vars.append(trans_var)
@@ -380,18 +378,18 @@ def solve_shift_scheduling(params, output_proto):
 
     # Cover constraints
     for s in range(1, num_shifts):
-        for w in range(num_weeks):
+        for w in range(num_games):
             for d in range(7):
-                works = [work[e, s, w * 7 + d] for e in range(num_employees)]
+                works = [work[e, s, w * 7 + d] for e in range(num_players)]
                 # Ignore Off shift.
-                min_demand = weekly_cover_demands[d][s - 1]
-                worked = model.NewIntVar(min_demand, num_employees, '')
+                min_demand = game_cover_demands[d][s - 1]
+                worked = model.NewIntVar(min_demand, num_players, '')
                 model.Add(worked == sum(works))
                 over_penalty = excess_cover_penalties[s - 1]
                 if over_penalty > 0:
-                    name = 'excess_demand(shift=%i, week=%i, day=%i)' % (s, w,
+                    name = 'excess_demand(shift=%i, game=%i, inning=%i)' % (s, w,
                                                                          d)
-                    excess = model.NewIntVar(0, num_employees - min_demand,
+                    excess = model.NewIntVar(0, num_players - min_demand,
                                              name)
                     model.Add(excess == worked - min_demand)
                     obj_int_vars.append(excess)
@@ -420,16 +418,16 @@ def solve_shift_scheduling(params, output_proto):
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         print()
         header = '          '
-        for w in range(num_weeks):
+        for w in range(num_games):
             header += ' 1 2 3 4 5 6 7 '
         print(header)
-        for e in range(num_employees):
+        for e in range(num_players):
             schedule = ''
-            for d in range(num_days):
+            for d in range(num_innings):
                 for s in range(num_shifts):
                     if solver.BooleanValue(work[e, s, d]):
                         schedule += shifts[s] + ' '
-            print('worker %2i: %s' % (e, schedule))
+            print('player %2i: %s' % (e, schedule))
         print()
         print('Penalties:')
         for i, var in enumerate(obj_bool_vars):
