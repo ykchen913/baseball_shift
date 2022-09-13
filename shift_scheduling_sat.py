@@ -15,6 +15,7 @@
 # Copyright 2022 Yen-Kuang Chen
 """Creates a shift scheduling problem and solves it."""
 
+from array import *
 from absl import app
 from absl import flags
 
@@ -189,60 +190,61 @@ def solve_shift_scheduling(params, output_proto):
     """Solves the shift scheduling problem."""
     # Data
     num_players = 12 
+    names = [ "Edward", "Spencer", "Arjum", "Hux", "Blake", "Carter", "Tyler", "Alex", "Lev", "Steven", "Andrew", "Bennett" ]
+    #          0         1          2        3      4        5         6        7       8      9         10        11
     num_games = 1
     shifts = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
     # Fixed assignment: (player, shift, inning).
-    # This fixes the first 2 innings of the schedule.
+    # player starts with 0, innings starts with 0
+    # shift starts with 1 (pitcher)
     fixed_assignments = [
-        (0, 1, 0),
-        (1, 1, 1),
-        (2, 1, 2),
-        (3, 1, 3),
-        (4, 1, 4),
+        #(9, 1, 0),  
+        #(0, 1, 1),
+        #(1, 1, 2),
+        (2, 0, 0), # Arjum out for the first half of the game  
+        (2, 0, 1),
+        (2, 0, 2),
     ]
 
-    # Request: (player, shift, inning, weight)
+    # Player not avaialble
+    not_playing = [
+        9, 
+    ]
+
+    # Depth map: (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+    depth_map = [
+        [ 0, 1, 0, 0, 1, 0, 2, 0, 0, 0 ],   # 0 
+        [ 0, 2, 1, -1, 2, 0, 2, 0, 1, 0 ],  # 1 
+        [ 0, 1, 4, -1, 0, 0, 0, 0, 0, 0 ],  # 2
+        [ 0, 1, 3, 3, 0, 0, 0, -1, -1, -1 ],# 3 
+        [ 0, -1, 0, 1, 0, 1, 0, 0, 0, 1 ],  # 4 
+        [ 0, 0, -1, -1, 0, 0, 0, 1, 1, 1 ], # 5 
+        [ 0, 1, -1, -1, 0, 1, 0, 1, 1, 1 ], # 5 
+        [ 2, -1, -1, -1, 2, 0, -1, 1, 1, 1 ],#7
+        [ 0, 2, 0, -1, 0, 2, 2, 0, 0, 0 ],  # 8 
+        [ 0, 2, -1, 1, 0, 2, 0, 0, 0, 0 ],  # 9 
+        [ 0, 1, -1, 3, -1, -1, -1, 1, 1, 1 ],#10 
+        [ 0, 0, 0, -1, 2, 0, 2, 1, 1, 0 ]   # 11 
+    ]
+
+    # Starting request: (player, shift, weight) // Only for the first 5 innings
     # A negative weight indicates that the player desire this assignment.
-    requests = [
-        # Employee 3 does not want to work on the first Saturinning (negative weight
-        # for the Off shift).
-        (0, 6, 0, -2), # prefer SS
-        (0, 6, 1, -2),
-        (0, 6, 2, -2),
-        (0, 6, 3, -2),
-        (0, 6, 4, -2),
-        (0, 0, 0, 2), # prefer not DH
-        (0, 0, 1, 2),
-        (0, 0, 2, 2),
-        (0, 0, 3, 2),
-        (0, 0, 4, 2),
-        (0, 0, 5, 2),
-        (0, 0, 6, 2),
-        (1, 2, 0, -2), # prefer C
-        (1, 2, 1, -2),
-        (1, 2, 2, -2),
-        (1, 2, 3, -2),
-        (1, 2, 4, -2),
-        (8, 1, 0, 2), # prefer not P
-        (8, 1, 1, 2),
-        (8, 1, 2, 2),
-        (8, 1, 3, 2),
-        (8, 1, 4, 2),
-        (8, 1, 5, 2),
-        (8, 1, 6, 2),
-        (8, 2, 0, 2), # prefer not C
-        (8, 2, 1, 2),
-        (8, 2, 2, 2),
-        (8, 2, 3, 2),
-        (8, 2, 4, 2),
-        (8, 2, 5, 2),
-        (8, 2, 6, 2),
-        # Employee 5 wants a night shift on the second Thursinning (negative weight).
-        ##YK (5, 3, 1, -2),
-        # Employee 2 does not want a night shift on the first Friinning (positive
-        # weight).
-        ##YK (2, 3, 4, 4)
+    # A postive weight indicates that the player does not desire this assignment.
+    srequest = [
+        (0, 6, -2), # prefer SS
+        (2, 2, -2), # prefer C
+    ]
+
+    # Game request: (player, shift, weight) // For the whole game
+    # A negative weight indicates that the player desire this assignment.
+    # A postive weight indicates that the player does not desire this assignment.
+    grequest = [
+        (0, 0, 4), # prefer not DH
+        (0, 1, 4), # prefer not P
+        (0, 2, 4), # prefer not C
+        (4, 1, 4), # prefer not P
+        (4, 2, 4), # prefer not C
     ]
 
     # Shift constraints on continuous sequence :
@@ -250,16 +252,16 @@ def solve_shift_scheduling(params, output_proto):
     #             soft_max, hard_max, max_penalty)
     shift_constraints = [
         # No two consecutive innings for DH 
-        (0, 1, 1, 0, 1, 1, 0),
-        # No two consecutive innings for IF 
+        (0, 1, 1, 0, 1, 7, 0),
+        # No two consecutive innings for same IF position 
         (3, 1, 1, 0, 1, 1, 0),
         (4, 1, 1, 0, 1, 1, 0),
         (5, 1, 1, 0, 1, 1, 0),
         (6, 1, 1, 0, 1, 1, 0),
-        # No three consecutive innings for OF 
-        (7, 1, 1, 0, 2, 2, 0),
-        (8, 1, 1, 0, 2, 2, 0),
-        (9, 1, 1, 0, 2, 2, 0),
+        # No three consecutive innings for same OF position 
+        (7, 1, 1, 0, 1, 2, 0),
+        (8, 1, 1, 0, 1, 2, 0),
+        (9, 1, 1, 0, 1, 2, 0),
     ]
 
     # Game sum constraints on shifts innings:
@@ -267,10 +269,10 @@ def solve_shift_scheduling(params, output_proto):
     #             soft_max, hard_max, max_penalty)
     game_sum_constraints = [
         # Constraints on positions per game.
-        (0, 0, 1, 7, 2, 2, 4), # For 12 players roster, one should not be DH for 3 of more innings
+        (0, 0, 1, 7, 2, 7, 4), # For 12 players roster, one should not be DH for 3 of more innings
         (1, 0, 0, 7, 1, 1, 4),
         (2, 0, 0, 7, 2, 3, 4), # if necessary, one can catch for 3 innings
-        (3, 0, 0, 7, 2, 2, 4), # limit players on same positions for more than twice
+        (3, 0, 0, 7, 2, 3, 4), # limit players on same positions for more than twice
         (4, 0, 0, 7, 2, 2, 4),
         (5, 0, 0, 7, 2, 2, 4),
         (6, 0, 0, 7, 2, 2, 4),
@@ -282,12 +284,12 @@ def solve_shift_scheduling(params, output_proto):
     # Penalized transitions:
     #     (previous_shift, next_shift, penalty (0 means forbidden))
     penalized_transitions = [
-        # After pitcher/catcher to catcher/pitcher has a penalty of 4.
-        (1, 2, 4),
-        (2, 1, 4),
+        # After pitcher/catcher to catcher/pitcher is not preferred 
+        (1, 2, 10),
+        (2, 1, 10),
     ]
 
-    # Demands for shifts for each inning of the game .
+    # Demands for shifts for each inning of the game.
     game_cover_demands = [
         (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 1st // DH is implicitly not required
         (1, 1, 1, 1, 1, 1, 1, 1, 1),  # 2nd
@@ -327,11 +329,36 @@ def solve_shift_scheduling(params, output_proto):
     for e, s, d in fixed_assignments:
         model.Add(work[e, s, d] == 1)
 
-    # Employee requests
-    for e, s, d, w in requests:
-        obj_bool_vars.append(work[e, s, d])
-        obj_bool_coeffs.append(w)
+    # Players not playing.
+    for e in not_playing:
+        for d in range(num_innings):
+            model.Add(work[e, 0, d] == 1)
 
+    # Player depth map 
+    for e in range(num_players):
+        for s in range(num_shifts): 
+            w = depth_map[e][s]
+            if w > 0: 
+                for d in range(num_innings):
+                    obj_bool_vars.append(work[e, s, d])
+                    obj_bool_coeffs.append((-2)*(depth_map[e][s]))
+            elif w < 0:
+                for d in range(num_innings):
+                    obj_bool_vars.append(work[e, s, d])
+                    obj_bool_coeffs.append((-4)*(depth_map[e][s]))
+
+    # Player starting request // First 5 innings
+    for e, s, w in srequest:
+        for d in range(5): # first 5 innings
+            obj_bool_vars.append(work[e, s, d])
+            obj_bool_coeffs.append(w)
+
+    # Player game request
+    for e, s, w in grequest:
+        for d in range(num_innings):
+            obj_bool_vars.append(work[e, s, d])
+            obj_bool_coeffs.append(w)
+    
     # Shift constraints
     for ct in shift_constraints:
         shift, hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = ct
@@ -419,7 +446,7 @@ def solve_shift_scheduling(params, output_proto):
         print()
         header = '          '
         for w in range(num_games):
-            header += ' 1 2 3 4 5 6 7 '
+            header += '1 2 3 4 5 6 7 '
         print(header)
         for e in range(num_players):
             schedule = ''
@@ -427,7 +454,7 @@ def solve_shift_scheduling(params, output_proto):
                 for s in range(num_shifts):
                     if solver.BooleanValue(work[e, s, d]):
                         schedule += shifts[s] + ' '
-            print('player %2i: %s' % (e, schedule))
+            print('%8s: %s' % (names[e], schedule))
         print()
         print('Penalties:')
         for i, var in enumerate(obj_bool_vars):
