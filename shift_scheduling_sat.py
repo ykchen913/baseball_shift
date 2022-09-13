@@ -25,7 +25,7 @@ from ortools.sat.python import cp_model
 FLAGS = flags.FLAGS
 flags.DEFINE_string('output_proto', '',
                     'Output file to write the cp_model proto to.')
-flags.DEFINE_string('params', 'max_time_in_seconds:10.0',
+flags.DEFINE_string('params', 'max_time_in_seconds:30.0',
                     'Sat solver parameters.')
 
 
@@ -192,16 +192,24 @@ def solve_shift_scheduling(params, output_proto):
     num_players = 12 
     names = [ "Edward", "Spencer", "Arjum", "Hux", "Blake", "Carter", "Tyler", "Alex", "Lev", "Steven", "Andrew", "Bennett" ]
     #          0         1          2        3      4        5         6        7       8      9         10        11
+    batting_order = [8, 0, 1, 10, 3, 11, 4, 5, 6, 7, 2, 9]
     num_games = 1
-    shifts = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    #shifts = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    shifts = ['DH', 'P ', 'C ', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']
 
     # Fixed assignment: (player, shift, inning).
     # player starts with 0, innings starts with 0
     # shift starts with 1 (pitcher)
     fixed_assignments = [
         #(9, 1, 0),  
-        #(0, 1, 1),
-        #(1, 1, 2),
+        (8, 1, 0),
+        #(0, 1, 2),
+        (1, 1, 1),  
+        (3, 1, 2),
+        (10, 1, 3),
+        (5, 1, 4),
+        (11, 1, 5),
+        (6, 1, 6),
         (2, 0, 0), # Arjum out for the first half of the game  
         (2, 0, 1),
         (2, 0, 2),
@@ -214,18 +222,18 @@ def solve_shift_scheduling(params, output_proto):
 
     # Depth map: (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
     depth_map = [
-        [ 0, 1, 0, 0, 1, 0, 2, 0, 0, 0 ],   # 0 
-        [ 0, 2, 1, -1, 2, 0, 2, 0, 1, 0 ],  # 1 
-        [ 0, 1, 4, -1, 0, 0, 0, 0, 0, 0 ],  # 2
-        [ 0, 1, 3, 3, 0, 0, 0, -1, -1, -1 ],# 3 
-        [ 0, -1, 0, 1, 0, 1, 0, 0, 0, 1 ],  # 4 
-        [ 0, 0, -1, -1, 0, 0, 0, 1, 1, 1 ], # 5 
-        [ 0, 1, -1, -1, 0, 1, 0, 1, 1, 1 ], # 5 
-        [ 2, -1, -1, -1, 2, 0, -1, 1, 1, 1 ],#7
-        [ 0, 2, 0, -1, 0, 2, 2, 0, 0, 0 ],  # 8 
-        [ 0, 2, -1, 1, 0, 2, 0, 0, 0, 0 ],  # 9 
-        [ 0, 1, -1, 3, -1, -1, -1, 1, 1, 1 ],#10 
-        [ 0, 0, 0, -1, 2, 0, 2, 1, 1, 0 ]   # 11 
+        [ 0, 1, 0, 0, 1, 0, 2, -1, 0, 0 ],      # 0 
+        [ 0, 2, 1, 0, 2, 0, 2, -1, 1, 0 ],      # 1 
+        [ 0, 1, 4, -1, 0, 0, 0, 0, -1, 0 ],      # 2
+        [ 0, 2, 3, 3, 0, 1, 0, -1, -1, -1 ],    # 3 
+        [ 0, 0, 0, 0, 0, 1, 0, 0, 0, 1 ],      # 4 
+        [ 0, 0, -1, -1, 0, 0, 0, 1, 1, 1 ],     # 5 
+        [ 0, 1, -1, -1, 0, 1, 0, 1, 1, 0 ],     # 6 
+        [ 0, -1, -1, -1, 2, 0, -1, 1, -1, 1 ],   # 7
+        [ 0, 2, 0, -1, 0, 1, 2, 0, 1, 0 ],      # 8 
+        [ 0, 2, -1, 0, 0, 2, 0, 0, -1, 1 ],      # 9 
+        [ 0, 1, -1, 3, -1, -1, -1, 0, -1, 1 ],   # 10 
+        [ 0, 0, 0, -1, 2, -1, 1, 1, 1, 0 ]       # 11 
     ]
 
     # Starting request: (player, shift, weight) // Only for the first 5 innings
@@ -240,10 +248,9 @@ def solve_shift_scheduling(params, output_proto):
     # A negative weight indicates that the player desire this assignment.
     # A postive weight indicates that the player does not desire this assignment.
     grequest = [
-        (0, 0, 4), # prefer not DH
+        #(0, 0, 4), # prefer not DH
         (0, 1, 4), # prefer not P
         (0, 2, 4), # prefer not C
-        (4, 1, 4), # prefer not P
         (4, 2, 4), # prefer not C
     ]
 
@@ -252,7 +259,7 @@ def solve_shift_scheduling(params, output_proto):
     #             soft_max, hard_max, max_penalty)
     shift_constraints = [
         # No two consecutive innings for DH 
-        (0, 1, 1, 0, 1, 7, 0),
+        (0, 1, 1, 0, 1, 7, 10),
         # No two consecutive innings for same IF position 
         (3, 1, 1, 0, 1, 1, 0),
         (4, 1, 1, 0, 1, 1, 0),
@@ -285,8 +292,8 @@ def solve_shift_scheduling(params, output_proto):
     #     (previous_shift, next_shift, penalty (0 means forbidden))
     penalized_transitions = [
         # After pitcher/catcher to catcher/pitcher is not preferred 
-        (1, 2, 10),
-        (2, 1, 10),
+        #(1, 2, 10),
+        #(2, 1, 10),
     ]
 
     # Demands for shifts for each inning of the game.
@@ -444,18 +451,6 @@ def solve_shift_scheduling(params, output_proto):
     # Print solution.
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         print()
-        header = '          '
-        for w in range(num_games):
-            header += '1 2 3 4 5 6 7 '
-        print(header)
-        for e in range(num_players):
-            schedule = ''
-            for d in range(num_innings):
-                for s in range(num_shifts):
-                    if solver.BooleanValue(work[e, s, d]):
-                        schedule += shifts[s] + ' '
-            print('%8s: %s' % (names[e], schedule))
-        print()
         print('Penalties:')
         for i, var in enumerate(obj_bool_vars):
             if solver.BooleanValue(var):
@@ -469,6 +464,19 @@ def solve_shift_scheduling(params, output_proto):
             if solver.Value(var) > 0:
                 print('  %s violated by %i, linear penalty=%i' %
                       (var.Name(), solver.Value(var), obj_int_coeffs[i]))
+        print()
+        header = '          '
+        for w in range(num_games):
+            header += '1  2  3  4  5  6  7 '
+        print(header)
+        #for e in range(num_players):
+        for e in batting_order:
+            schedule = ''
+            for d in range(num_innings):
+                for s in range(num_shifts):
+                    if solver.BooleanValue(work[e, s, d]):
+                        schedule += shifts[s] + ' '
+            print('%8s: %s' % (names[e], schedule))
 
     print()
     print('Statistics')
