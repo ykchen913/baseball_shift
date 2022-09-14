@@ -192,10 +192,10 @@ def solve_shift_scheduling(params, output_proto):
     num_players = 12 
     names = [ "Edward", "Spencer", "Arjum", "Hux", "Blake", "Carter", "Tyler", "Alex", "Lev", "Steven", "Andrew", "Bennett" ]
     #          0         1          2        3      4        5         6        7       8      9         10        11
-    batting_order = [8, 0, 1, 10, 3, 11, 4, 5, 6, 7, 2, 9]
+    batting_order = [8, 1, 0, 10, 3, 11, 4, 5, 6, 7, 2, 9]
     num_games = 1
-    #shifts = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
     shifts = ['DH', 'P ', 'C ', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']
+    #         '0',  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9'
 
     # Fixed assignment: (player, shift, inning).
     # player starts with 0, innings starts with 0
@@ -222,7 +222,7 @@ def solve_shift_scheduling(params, output_proto):
 
     # Depth map: (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
     depth_map = [
-        [ 0, 1, 0, 0, 1, 0, 2, -1, 0, 0 ],      # 0 
+        [ 0, 1, 0, 0, 1, 0, 2, 0, 0, -1 ],      # 0 
         [ 0, 2, 1, 0, 2, 0, 2, -1, 1, 0 ],      # 1 
         [ 0, 1, 4, -1, 0, 0, 0, 0, -1, 0 ],      # 2
         [ 0, 2, 3, 3, 0, 1, 0, -1, -1, -1 ],    # 3 
@@ -374,7 +374,7 @@ def solve_shift_scheduling(params, output_proto):
             variables, coeffs = add_soft_sequence_constraint(
                 model, works, hard_min, soft_min, min_cost, soft_max, hard_max,
                 max_cost,
-                'shift_constraint(player %i, shift %i)' % (e, shift))
+                'shift_constraint(player %s, shift %i)' % (names[e], shift))
             obj_bool_vars.extend(variables)
             obj_bool_coeffs.extend(coeffs)
 
@@ -387,8 +387,8 @@ def solve_shift_scheduling(params, output_proto):
                 variables, coeffs = add_soft_sum_constraint(
                     model, works, hard_min, soft_min, min_cost, soft_max,
                     hard_max, max_cost,
-                    'game_sum_constraint(player %i, shift %i, game %i)' %
-                    (e, shift, w))
+                    'game_sum_constraint(player %s, shift %i, game %i)' %
+                    (names[e], shift, w))
                 obj_int_vars.extend(variables)
                 obj_int_coeffs.extend(coeffs)
 
@@ -404,7 +404,7 @@ def solve_shift_scheduling(params, output_proto):
                     model.AddBoolOr(transition)
                 else:
                     trans_var = model.NewBoolVar(
-                        'transition (player=%i, inning=%i)' % (e, d))
+                        'transition (player=%s, inning=%i)' % (e, d))
                     transition.append(trans_var)
                     model.AddBoolOr(transition)
                     obj_bool_vars.append(trans_var)
