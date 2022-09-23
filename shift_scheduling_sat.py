@@ -22,10 +22,18 @@ from absl import flags
 from google.protobuf import text_format
 from ortools.sat.python import cp_model
 
+#importing the required libraries
+import gspread
+from gspread.cell import Cell
+import pandas as pd
+from oauth2client.service_account import ServiceAccountCredentials
+import numpy
+import time
+
 FLAGS = flags.FLAGS
 flags.DEFINE_string('output_proto', '',
                     'Output file to write the cp_model proto to.')
-flags.DEFINE_string('params', 'max_time_in_seconds:30.0',
+flags.DEFINE_string('params', 'max_time_in_seconds:15.0',
                     'Sat solver parameters.')
 
 
@@ -188,71 +196,34 @@ def add_soft_sum_constraint(model, works, hard_min, soft_min, min_cost,
 
 def solve_shift_scheduling(params, output_proto):
     """Solves the shift scheduling problem."""
+
+    # define the scope
+    scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+
+    # add credentials to the account
+    creds = ServiceAccountCredentials.from_json_keyfile_name('baseballlineup-d679cf590579.json', scope)
+
+    # authorize the clientsheet
+    client = gspread.authorize(creds)
+
+    # get the instance of the Spreadsheet
+    sheet = client.open('BaseballLineup')
+
     # Data
-    num_players = 12 
-    names = [ "Edward", "Spencer", "Arjum", "Hux", "Blake", "Carter", "Tyler", "Alex", "Lev", "Steven", "Andrew", "Bennett" ]
-    #          0         1          2        3      4        5         6        7       8      9         10        11
-    batting_order = [8, 1, 0, 10, 3, 11, 4, 5, 6, 7, 2, 9]
+    names=sheet.worksheet('BattingOrder').col_values(1)
+    num_players = len(names)
+    # batting_order = [0...num_players-1]
     num_games = 1
-    shifts = ['DH', 'P ', 'C ', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']
+
+    depth_matrix=sheet.worksheet('DepthMatrix').get_all_values()
+    shifts=depth_matrix.pop(0)
+    del shifts[0]
+    #shifts = ['DH', 'P ', 'C ', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']
     #         '0',  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9'
 
-    # Fixed assignment: (player, shift, inning).
-    # player starts with 0, innings starts with 0
-    # shift starts with 1 (pitcher)
-    fixed_assignments = [
-        #(9, 1, 0),  
-        (8, 1, 0),
-        #(0, 1, 2),
-        (1, 1, 1),  
-        (3, 1, 2),
-        (10, 1, 3),
-        (5, 1, 4),
-        (11, 1, 5),
-        (6, 1, 6),
-        (2, 0, 0), # Arjum out for the first half of the game  
-        (2, 0, 1),
-        (2, 0, 2),
-    ]
-
-    # Player not avaialble
-    not_playing = [
-        9, 
-    ]
-
     # Depth map: (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
-    depth_map = [
-        [ 0, 1, 0, 0, 1, 0, 2, 0, 0, -1 ],      # 0 
-        [ 0, 2, 1, 0, 2, 0, 2, -1, 1, 0 ],      # 1 
-        [ 0, 1, 4, -1, 0, 0, 0, 0, -1, 0 ],      # 2
-        [ 0, 2, 3, 3, 0, 1, 0, -1, -1, -1 ],    # 3 
-        [ 0, 0, 0, 0, 0, 1, 0, 0, 0, 1 ],      # 4 
-        [ 0, 0, -1, -1, 0, 0, 0, 1, 1, 1 ],     # 5 
-        [ 0, 1, -1, -1, 0, 1, 0, 1, 1, 0 ],     # 6 
-        [ 0, -1, -1, -1, 2, 0, -1, 1, -1, 1 ],   # 7
-        [ 0, 2, 0, -1, 0, 1, 2, 0, 1, 0 ],      # 8 
-        [ 0, 2, -1, 0, 0, 2, 0, 0, -1, 1 ],      # 9 
-        [ 0, 1, -1, 3, -1, -1, -1, 0, -1, 1 ],   # 10 
-        [ 0, 0, 0, -1, 2, -1, 1, 1, 1, 0 ]       # 11 
-    ]
-
-    # Starting request: (player, shift, weight) // Only for the first 5 innings
-    # A negative weight indicates that the player desire this assignment.
-    # A postive weight indicates that the player does not desire this assignment.
-    srequest = [
-        (0, 6, -2), # prefer SS
-        (2, 2, -2), # prefer C
-    ]
-
-    # Game request: (player, shift, weight) // For the whole game
-    # A negative weight indicates that the player desire this assignment.
-    # A postive weight indicates that the player does not desire this assignment.
-    grequest = [
-        #(0, 0, 4), # prefer not DH
-        (0, 1, 4), # prefer not P
-        (0, 2, 4), # prefer not C
-        (4, 2, 4), # prefer not C
-    ]
+    transposed_depth_chart=numpy.transpose(depth_matrix)
+    depth_chart_list=list(transposed_depth_chart[0])
 
     # Shift constraints on continuous sequence :
     #     (shift, hard_min, soft_min, min_penalty,
@@ -333,39 +304,102 @@ def solve_shift_scheduling(params, output_proto):
             model.AddExactlyOne(work[e, s, d] for s in range(num_shifts))
 
     # Fixed assignments.
-    for e, s, d in fixed_assignments:
-        model.Add(work[e, s, d] == 1)
+    # Fixed assignment: (player, shift, inning).
+    # player starts with 0, innings starts with 0
+    # shift starts with 1 (pitcher)
+    print ("Fixed Assignment")
+    fixed_assignment=sheet.worksheet('FixedAssignment').get_all_values()
+    del fixed_assignment[0]
+    for assignment in fixed_assignment:
+        player_index= names.index(assignment[0])
+        shift_index = shifts.index(assignment[1])
+        inning_index = int(assignment[2])-1
+        print("%s %d %s %d %d %d" % (assignment[0], player_index, assignment[1], shift_index, int(assignment[2]), inning_index))
+        model.Add(work[player_index, shift_index, inning_index] == 1)
 
-    # Players not playing.
-    for e in not_playing:
-        for d in range(num_innings):
-            model.Add(work[e, 0, d] == 1)
+    print ("")
+
+    # Pitcher assignment // special case of fixed assignment, where the shift_index = 1
+    print ("Pitching Order")
+    pitcher_list=sheet.worksheet('PitchingOrder').col_values(1)
+    for pitcher in pitcher_list:
+        player_index= names.index(pitcher)
+        inning_index = pitcher_list.index(pitcher)
+        print("%s %d 1 %d" % (pitcher, player_index, inning_index))
+        model.Add(work[player_index, 1, inning_index] == 1)
+
+    print ("")
 
     # Player depth map 
-    for e in range(num_players):
+    """ an example of target depth_matrix
+    depth_map = [
+        [ 0, 1, 0, 0, 1, 0, 2, 0, 0, -1 ],      # 0 
+        [ 0, 2, 1, 0, 2, 0, 2, -1, 1, 0 ],      # 1 
+        [ 0, 1, 4, -1, 0, 0, 0, 0, -1, 0 ],      # 2
+        [ 0, 2, 3, 3, 0, 1, 0, -1, -1, -1 ],    # 3 
+        [ 0, 0, 0, 0, 0, 1, 0, 0, 0, 1 ],      # 4 
+        [ 0, 0, -1, -1, 0, 0, 0, 1, 1, 1 ],     # 5 
+        [ 0, 1, -1, -1, 0, 1, 0, 1, 1, 0 ],     # 6 
+        [ 0, -1, -1, -1, 2, 0, -1, 1, -1, 1 ],   # 7
+        [ 0, 2, 0, -1, 0, 1, 2, 0, 1, 0 ],      # 8 
+        [ 0, 2, -1, 0, 0, 2, 0, 0, -1, 1 ],      # 9 
+        [ 0, 1, -1, 3, -1, -1, -1, 0, -1, 1 ],   # 10 
+        [ 0, 0, 0, -1, 2, -1, 1, 1, 1, 0 ]       # 11 
+    ]
+    """
+    print ("Depth Matrix by batting order")
+
+    for player in names:
+        player_index_in_matrix= depth_chart_list.index(player)
+        player_index_in_batting_order= names.index(player)
+        print(depth_matrix[player_index_in_matrix])
         for s in range(num_shifts): 
-            w = depth_map[e][s]
+            w = int(depth_matrix[player_index_in_matrix][s+1])
             if w > 0: 
                 for d in range(num_innings):
-                    obj_bool_vars.append(work[e, s, d])
-                    obj_bool_coeffs.append((-2)*(depth_map[e][s]))
+                    obj_bool_vars.append(work[player_index_in_batting_order, s, d])
+                    obj_bool_coeffs.append((-2)*w)
+                    #print ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
             elif w < 0:
                 for d in range(num_innings):
-                    obj_bool_vars.append(work[e, s, d])
-                    obj_bool_coeffs.append((-4)*(depth_map[e][s]))
+                    obj_bool_vars.append(work[player_index_in_batting_order, s, d])
+                    obj_bool_coeffs.append((-4)*w)
+                    #print ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
 
-    # Player starting request // First 5 innings
-    for e, s, w in srequest:
+    print ("")
+
+    # Starting request: (player, shift, weight) // Only for the first 5 innings
+    # A negative weight indicates that the player desire this assignment.
+    # A postive weight indicates that the player does not desire this assignment.
+    print ("Starting Request")
+    starting_request=sheet.worksheet('SRequest').get_all_values()
+    del starting_request[0]
+    for request in starting_request:
+        player_index= names.index(request[0])
+        shift_index = shifts.index(request[1])
+        print("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
         for d in range(5): # first 5 innings
-            obj_bool_vars.append(work[e, s, d])
-            obj_bool_coeffs.append(w)
+            obj_bool_vars.append(work[player_index, shift_index, d])
+            obj_bool_coeffs.append(-int(request[2])*2)
 
-    # Player game request
-    for e, s, w in grequest:
+    print ("")
+
+    # Game request: (player, shift, weight) // For the whole game
+    # A negative weight indicates that the player desire this assignment.
+    # A postive weight indicates that the player does not desire this assignment.
+    print ("Game Request")
+    game_request=sheet.worksheet('GRequest').get_all_values()
+    del game_request[0]
+    for request in game_request:
+        player_index= names.index(request[0])
+        shift_index = shifts.index(request[1])
+        print("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
         for d in range(num_innings):
-            obj_bool_vars.append(work[e, s, d])
-            obj_bool_coeffs.append(w)
-    
+            obj_bool_vars.append(work[player_index, shift_index, d])
+            obj_bool_coeffs.append(-int(request[2])*2)
+
+    print ("")
+
     # Shift constraints
     for ct in shift_constraints:
         shift, hard_min, soft_min, min_cost, soft_max, hard_max, max_cost = ct
@@ -469,14 +503,32 @@ def solve_shift_scheduling(params, output_proto):
         for w in range(num_games):
             header += '1  2  3  4  5  6  7 '
         print(header)
-        #for e in range(num_players):
-        for e in batting_order:
+        for e in range(num_players):
             schedule = ''
             for d in range(num_innings):
                 for s in range(num_shifts):
                     if solver.BooleanValue(work[e, s, d]):
                         schedule += shifts[s] + ' '
             print('%8s: %s' % (names[e], schedule))
+
+        print()
+        cells = []
+        named_tuple = time.localtime() # get struct_time
+        time_string = time.strftime("%m/%d %H:%M", named_tuple)
+        cells.append(Cell(row=1, col=1, value=time_string))
+
+        for d in range(num_innings):
+            cells.append(Cell(row=1, col=d+2, value=d+1))
+        for e in range(num_players):
+            cells.append(Cell(row=e+2, col=1, value=names[e]))
+            for d in range(num_innings):
+                for s in range(num_shifts):
+                    if solver.BooleanValue(work[e, s, d]):
+                        cells.append(Cell(row=e+2, col=d+2, value=shifts[s]))
+        print(cells)
+        output_worksheet = sheet.worksheet('Lineup')
+        output_worksheet.clear()
+        output_worksheet.update_cells(cells)
 
     print()
     print('Statistics')
@@ -492,3 +544,4 @@ def main(_=None):
 
 if __name__ == '__main__':
     app.run(main)
+
