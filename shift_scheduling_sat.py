@@ -31,8 +31,8 @@ import numpy
 import os, time
 import logging, sys
 
-JSON_FILE_PATH='/root/baseball_shift/'
-#JSON_FILE_PATH='/home/pallgcsk/baseball_shift/'
+#JSON_FILE_PATH='/root/baseball_shift/'
+JSON_FILE_PATH='/home/pallgcsk/baseball_shift/'
 #JSON_FILE_PATH='/home/ykchen/baseball_shift/'
 
 TEAM_LINEUP='AkitaLineup'
@@ -511,20 +511,22 @@ def solve_shift_scheduling(params, output_proto):
         for i, var in enumerate(obj_int_vars):
             if solver.Value(var) > 0:
                 logger.info('  %s violated by %i, linear penalty=%i' % (var.Name(), solver.Value(var), obj_int_coeffs[i]))
-        print()
-        header = '          '
-        for w in range(num_games):
-            header += '1  2  3  4  5  6  7 '
-        print(header)
+
+        print('')
+        print('<table>')
+        header='<tr><td>         </td> '
+        for d in range(num_innings):
+            header += '<td> '+ str(d+1) + '  </td>'
+        print(header+ ' </tr>')
         for e in range(num_players):
             schedule = ''
             for d in range(num_innings):
                 for s in range(num_shifts):
                     if solver.BooleanValue(work[e, s, d]):
-                        schedule += shifts[s] + ' '
-            print('%8s: %s' % (names[e], schedule))
+                        schedule += '<td> '+'{:2}'.format(shifts[s]) + ' </td>'
+            print('<tr><td>%8s </td> %s </tr>' % (names[e], schedule))
+        print('</table>')
 
-        print()
         cells = []
         os.environ['TZ'] = 'America/Los_Angeles'
         time.tzset()
