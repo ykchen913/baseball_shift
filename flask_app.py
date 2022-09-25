@@ -15,8 +15,8 @@ def index():
 #These functions will run when POST method is used.
 @app.route('/', methods = ["POST"] )
 def generate_lineup():
-    os.system('python3 /home/pallgcsk/baseball_shift/shift_scheduling_sat.py > /home/pallgcsk/mysite/templates/output.txt')
-    os.system('/home/pallgcsk/mysite/templates/convert.sh /home/pallgcsk/mysite/templates/output.txt')
+    os.system('python3 ~/baseball_shift/shift_scheduling_sat.py > ~/mysite/templates/output.txt')
+    os.system('~/mysite/templates/convert.sh ~/mysite/templates/output.txt')
     return render_template('output.html', PageTitle = "Execution result")
 
 if __name__ == '__main__':
