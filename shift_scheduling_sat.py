@@ -28,7 +28,8 @@ from gspread.cell import Cell
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 import numpy
-import time
+import os, time
+import logging, sys
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('output_proto', '',
@@ -197,17 +198,19 @@ def add_soft_sum_constraint(model, works, hard_min, soft_min, min_cost,
 def solve_shift_scheduling(params, output_proto):
     """Solves the shift scheduling problem."""
 
+    logging.basicConfig(filename='debug.log', encoding='utf-8', level=logging.DEBUG)
+
     # define the scope
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
 
     # add credentials to the account
-    creds = ServiceAccountCredentials.from_json_keyfile_name('baseballlineup-d679cf590579.json', scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name('/home/pallgcsk/baseball_shift/baseballlineup-d679cf590579.json', scope)
 
     # authorize the clientsheet
     client = gspread.authorize(creds)
 
     # get the instance of the Spreadsheet
-    sheet = client.open('BaseballLineup')
+    sheet = client.open('AkitaLineup')
 
     # Data
     names=sheet.worksheet('BattingOrder').col_values(1)
@@ -307,28 +310,28 @@ def solve_shift_scheduling(params, output_proto):
     # Fixed assignment: (player, shift, inning).
     # player starts with 0, innings starts with 0
     # shift starts with 1 (pitcher)
-    print ("Fixed Assignment")
+    logging.debug ("Fixed Assignment")
     fixed_assignment=sheet.worksheet('FixedAssignment').get_all_values()
     del fixed_assignment[0]
     for assignment in fixed_assignment:
         player_index= names.index(assignment[0])
         shift_index = shifts.index(assignment[1])
         inning_index = int(assignment[2])-1
-        print("%s %d %s %d %d %d" % (assignment[0], player_index, assignment[1], shift_index, int(assignment[2]), inning_index))
+        logging.debug("%s %d %s %d %d %d" % (assignment[0], player_index, assignment[1], shift_index, int(assignment[2]), inning_index))
         model.Add(work[player_index, shift_index, inning_index] == 1)
 
-    print ("")
+    logging.debug ("")
 
     # Pitcher assignment // special case of fixed assignment, where the shift_index = 1
-    print ("Pitching Order")
+    logging.debug ("Pitching Order")
     pitcher_list=sheet.worksheet('PitchingOrder').col_values(1)
     for pitcher in pitcher_list:
         player_index= names.index(pitcher)
         inning_index = pitcher_list.index(pitcher)
-        print("%s %d 1 %d" % (pitcher, player_index, inning_index))
+        logging.debug("%s %d 1 %d" % (pitcher, player_index, inning_index))
         model.Add(work[player_index, 1, inning_index] == 1)
 
-    print ("")
+    logging.debug ("")
 
     # Player depth map 
     """ an example of target depth_matrix
@@ -347,58 +350,58 @@ def solve_shift_scheduling(params, output_proto):
         [ 0, 0, 0, -1, 2, -1, 1, 1, 1, 0 ]       # 11 
     ]
     """
-    print ("Depth Matrix by batting order")
+    logging.debug ("Depth Matrix by batting order")
 
     for player in names:
         player_index_in_matrix= depth_chart_list.index(player)
         player_index_in_batting_order= names.index(player)
-        print(depth_matrix[player_index_in_matrix])
+        logging.debug(depth_matrix[player_index_in_matrix])
         for s in range(num_shifts): 
             w = int(depth_matrix[player_index_in_matrix][s+1])
             if w > 0: 
                 for d in range(num_innings):
                     obj_bool_vars.append(work[player_index_in_batting_order, s, d])
                     obj_bool_coeffs.append((-2)*w)
-                    #print ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
+                    logging.debug ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
             elif w < 0:
                 for d in range(num_innings):
                     obj_bool_vars.append(work[player_index_in_batting_order, s, d])
                     obj_bool_coeffs.append((-4)*w)
-                    #print ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
+                    logging.debug ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
 
-    print ("")
+    logging.debug ("")
 
     # Starting request: (player, shift, weight) // Only for the first 5 innings
     # A negative weight indicates that the player desire this assignment.
     # A postive weight indicates that the player does not desire this assignment.
-    print ("Starting Request")
+    logging.debug ("Starting Request")
     starting_request=sheet.worksheet('SRequest').get_all_values()
     del starting_request[0]
     for request in starting_request:
         player_index= names.index(request[0])
         shift_index = shifts.index(request[1])
-        print("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
+        logging.debug("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
         for d in range(5): # first 5 innings
             obj_bool_vars.append(work[player_index, shift_index, d])
             obj_bool_coeffs.append(-int(request[2])*2)
 
-    print ("")
+    logging.debug ("")
 
     # Game request: (player, shift, weight) // For the whole game
     # A negative weight indicates that the player desire this assignment.
     # A postive weight indicates that the player does not desire this assignment.
-    print ("Game Request")
+    logging.debug ("Game Request")
     game_request=sheet.worksheet('GRequest').get_all_values()
     del game_request[0]
     for request in game_request:
         player_index= names.index(request[0])
         shift_index = shifts.index(request[1])
-        print("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
+        logging.debug("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
         for d in range(num_innings):
             obj_bool_vars.append(work[player_index, shift_index, d])
             obj_bool_coeffs.append(-int(request[2])*2)
 
-    print ("")
+    logging.debug ("")
 
     # Shift constraints
     for ct in shift_constraints:
@@ -471,7 +474,7 @@ def solve_shift_scheduling(params, output_proto):
             for i in range(len(obj_int_vars))))
 
     if output_proto:
-        print('Writing proto to %s' % output_proto)
+        logging.debug('Writing proto to %s' % output_proto)
         with open(output_proto, 'w') as text_file:
             text_file.write(str(model))
 
@@ -484,20 +487,19 @@ def solve_shift_scheduling(params, output_proto):
 
     # Print solution.
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        print()
-        print('Penalties:')
+        logging.debug('')
+        logging.debug('Penalties:')
         for i, var in enumerate(obj_bool_vars):
             if solver.BooleanValue(var):
                 penalty = obj_bool_coeffs[i]
                 if penalty > 0:
-                    print('  %s violated, penalty=%i' % (var.Name(), penalty))
+                    logging.debug('  %s violated, penalty=%i' % (var.Name(), penalty))
                 else:
-                    print('  %s fulfilled, gain=%i' % (var.Name(), -penalty))
+                    logging.debug('  %s fulfilled, gain=%i' % (var.Name(), -penalty))
 
         for i, var in enumerate(obj_int_vars):
             if solver.Value(var) > 0:
-                print('  %s violated by %i, linear penalty=%i' %
-                      (var.Name(), solver.Value(var), obj_int_coeffs[i]))
+                logging.debug('  %s violated by %i, linear penalty=%i' % (var.Name(), solver.Value(var), obj_int_coeffs[i]))
         print()
         header = '          '
         for w in range(num_games):
@@ -513,6 +515,8 @@ def solve_shift_scheduling(params, output_proto):
 
         print()
         cells = []
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
         named_tuple = time.localtime() # get struct_time
         time_string = time.strftime("%m/%d %H:%M", named_tuple)
         cells.append(Cell(row=1, col=1, value=time_string))
@@ -525,7 +529,7 @@ def solve_shift_scheduling(params, output_proto):
                 for s in range(num_shifts):
                     if solver.BooleanValue(work[e, s, d]):
                         cells.append(Cell(row=e+2, col=d+2, value=shifts[s]))
-        print(cells)
+        logging.debug(cells)
         output_worksheet = sheet.worksheet('Lineup')
         output_worksheet.clear()
         output_worksheet.update_cells(cells)
