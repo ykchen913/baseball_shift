@@ -32,11 +32,11 @@ import os, time
 import logging, sys
 
 #JSON_FILE_PATH='/root/baseball_shift/'
-JSON_FILE_PATH='/home/pallgcsk/baseball_shift/'
-#JSON_FILE_PATH='/home/ykchen/baseball_shift/'
+#JSON_FILE_PATH='/home/pallgcsk/baseball_shift/'
+JSON_FILE_PATH='/home/ykchen/baseball_shift/'
 
-TEAM_LINEUP='AkitaLineup'
-#TEAM_LINEUP='BaseballLineup'
+#TEAM_LINEUP='AkitaLineup'
+TEAM_LINEUP='BaseballLineup'
 
 DEBUG_INFO_LEVEL=logging.WARNING
 #DEBUG_INFO_LEVEL=logging.INFO
@@ -204,6 +204,16 @@ def add_soft_sum_constraint(model, works, hard_min, soft_min, min_cost,
 
     return cost_variables, cost_coefficients
 
+def index_in_list(term,list_long,list_short):
+    index_term = -1
+    try:
+        index_term=list_long.index(term)
+    except BaseException:   # if we cannot fine the term in the long list, we try to seach it up by the first 3 letter of the term
+        try:
+            index_term=list_short.index(term[0:3])
+        except BaseException:
+            index_term=-1   # if we cannot fine the term in the short map using 3 letters of the names, we just return -1
+    return(index_term)
 
 def solve_shift_scheduling(params, output_proto):
     """Solves the shift scheduling problem."""
@@ -227,6 +237,13 @@ def solve_shift_scheduling(params, output_proto):
     names=sheet.worksheet('BattingOrder').col_values(1)
     num_players = len(names)
     # batting_order = [0...num_players-1]
+    names_shorten=names.copy()
+    for i in range(num_players):
+        names_shorten[i]=names[i][0:3]
+
+    logger.info(names)
+    logger.info(names_shorten)
+
     num_games = 1
 
     depth_matrix=sheet.worksheet('DepthMatrix').get_all_values()
@@ -238,13 +255,20 @@ def solve_shift_scheduling(params, output_proto):
     # Depth map: (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
     transposed_depth_chart=numpy.transpose(depth_matrix)
     depth_chart_list=list(transposed_depth_chart[0])
+    depth_chart_list_shorten=depth_chart_list.copy()
+    for i in range(len(depth_chart_list)):
+        depth_chart_list_shorten[i]=depth_chart_list[i][0:3]
+
+    logger.info(depth_chart_list)
+    logger.info(depth_chart_list_shorten)
 
     # Shift constraints on continuous sequence :
     #     (shift, hard_min, soft_min, min_penalty,
     #             soft_max, hard_max, max_penalty)
     shift_constraints = [
         # No two consecutive innings for DH 
-        (0, 1, 1, 0, 1, 7, 10),
+        (0, 1, 1, 1, 1, 7, 2),
+        (2, 0, 3, 2, 3, 7, 1),
         # No two consecutive innings for same IF position 
         (3, 1, 1, 0, 1, 1, 0),
         (4, 1, 1, 0, 1, 1, 0),
@@ -261,24 +285,24 @@ def solve_shift_scheduling(params, output_proto):
     #             soft_max, hard_max, max_penalty)
     game_sum_constraints = [
         # Constraints on positions per game.
-        (0, 0, 1, 7, 2, 7, 4), # For 12 players roster, one should not be DH for 3 of more innings
-        (1, 0, 0, 7, 1, 1, 4),
-        (2, 0, 0, 7, 2, 3, 4), # if necessary, one can catch for 3 innings
-        (3, 0, 0, 7, 2, 3, 4), # limit players on same positions for more than twice
-        (4, 0, 0, 7, 2, 2, 4),
-        (5, 0, 0, 7, 2, 2, 4),
-        (6, 0, 0, 7, 2, 2, 4),
-        (7, 0, 0, 7, 2, 3, 4), # if necessary, one can OF for 3 innings
-        (8, 0, 0, 7, 2, 3, 4),
-        (9, 0, 0, 7, 2, 3, 4),
+        (0, 0, 1, 8, 2, 7, 4), # For 12 players roster, one should not be DH for 3 of more innings
+        (1, 0, 0, 4, 1, 1, 4),
+        (2, 0, 0, 4, 3, 3, 4), # if necessary, one can catch for 3 innings
+        (3, 0, 0, 4, 3, 3, 4), # limit players on same positions for more than twice
+        (4, 0, 0, 4, 2, 2, 4),
+        (5, 0, 0, 4, 2, 2, 4),
+        (6, 0, 0, 4, 2, 2, 4),
+        (7, 0, 0, 4, 2, 3, 4), # if necessary, one can OF for 3 innings
+        (8, 0, 0, 4, 2, 3, 4),
+        (9, 0, 0, 4, 2, 3, 4),
     ]
 
     # Penalized transitions:
     #     (previous_shift, next_shift, penalty (0 means forbidden))
     penalized_transitions = [
         # After pitcher/catcher to catcher/pitcher is not preferred 
-        #(1, 2, 10),
-        #(2, 1, 10),
+        (1, 2, 0),
+        (2, 1, 0),
     ]
 
     # Demands for shifts for each inning of the game.
@@ -293,7 +317,7 @@ def solve_shift_scheduling(params, output_proto):
     ]
 
     # Penalty for exceeding the cover constraint per shift type.
-    excess_cover_penalties = (5, 5, 5, 5, 5, 5, 5, 5, 5) # DH is implicity not required
+    excess_cover_penalties = (15, 15, 15, 15, 15, 15, 15, 15, 15) # DH is implicity not required
 
     num_innings = num_games * 7
     num_shifts = len(shifts)
@@ -325,11 +349,14 @@ def solve_shift_scheduling(params, output_proto):
     fixed_assignment=sheet.worksheet('FixedAssignment').get_all_values()
     del fixed_assignment[0]
     for assignment in fixed_assignment:
-        player_index= names.index(assignment[0])
-        shift_index = shifts.index(assignment[1])
-        inning_index = int(assignment[2])-1
-        logger.info("%s %d %s %d %d %d" % (assignment[0], player_index, assignment[1], shift_index, int(assignment[2]), inning_index))
-        model.Add(work[player_index, shift_index, inning_index] == 1)
+        player_index= index_in_list(assignment[0],names,names_shorten)  ######
+        if player_index < 0:
+            print ("Fixed assignment %s for %s at %s ignored. Please check spelling." % (assignment[0], assignment[1], assignment[2]))
+        else:
+            shift_index = shifts.index(assignment[1])
+            inning_index = int(assignment[2])-1
+            logger.info("%s %d %s %d %d %d" % (assignment[0], player_index, assignment[1], shift_index, int(assignment[2]), inning_index))
+            model.Add(work[player_index, shift_index, inning_index] == 1)
 
     logger.info ("")
 
@@ -337,48 +364,13 @@ def solve_shift_scheduling(params, output_proto):
     logger.info ("Pitching Order")
     pitcher_list=sheet.worksheet('PitchingOrder').col_values(1)
     for pitcher in pitcher_list:
-        player_index= names.index(pitcher)
-        inning_index = pitcher_list.index(pitcher)
-        logger.info("%s %d 1 %d" % (pitcher, player_index, inning_index))
-        model.Add(work[player_index, 1, inning_index] == 1)
-
-    logger.info ("")
-
-    # Player depth map 
-    """ an example of target depth_matrix
-    depth_map = [
-        [ 0, 1, 0, 0, 1, 0, 2, 0, 0, -1 ],      # 0 
-        [ 0, 2, 1, 0, 2, 0, 2, -1, 1, 0 ],      # 1 
-        [ 0, 1, 4, -1, 0, 0, 0, 0, -1, 0 ],      # 2
-        [ 0, 2, 3, 3, 0, 1, 0, -1, -1, -1 ],    # 3 
-        [ 0, 0, 0, 0, 0, 1, 0, 0, 0, 1 ],      # 4 
-        [ 0, 0, -1, -1, 0, 0, 0, 1, 1, 1 ],     # 5 
-        [ 0, 1, -1, -1, 0, 1, 0, 1, 1, 0 ],     # 6 
-        [ 0, -1, -1, -1, 2, 0, -1, 1, -1, 1 ],   # 7
-        [ 0, 2, 0, -1, 0, 1, 2, 0, 1, 0 ],      # 8 
-        [ 0, 2, -1, 0, 0, 2, 0, 0, -1, 1 ],      # 9 
-        [ 0, 1, -1, 3, -1, -1, -1, 0, -1, 1 ],   # 10 
-        [ 0, 0, 0, -1, 2, -1, 1, 1, 1, 0 ]       # 11 
-    ]
-    """
-    logger.info ("Depth Matrix by batting order")
-
-    for player in names:
-        player_index_in_matrix= depth_chart_list.index(player)
-        player_index_in_batting_order= names.index(player)
-        logger.info(depth_matrix[player_index_in_matrix])
-        for s in range(num_shifts): 
-            w = int(depth_matrix[player_index_in_matrix][s+1])
-            if w > 0: 
-                for d in range(num_innings):
-                    obj_bool_vars.append(work[player_index_in_batting_order, s, d])
-                    obj_bool_coeffs.append((-2)*w)
-                    #logger.info ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
-            elif w < 0:
-                for d in range(num_innings):
-                    obj_bool_vars.append(work[player_index_in_batting_order, s, d])
-                    obj_bool_coeffs.append((-4)*w)
-                    #logger.info ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
+        player_index= index_in_list(pitcher,names,names_shorten)  ######
+        if player_index < 0:
+            print ("Pitcher assignment %s ignored. Please check spelling." % (pitcher))
+        else:
+            inning_index = pitcher_list.index(pitcher)
+            logger.info("%s %d 1 %d" % (pitcher, player_index, inning_index))
+            model.Add(work[player_index, 1, inning_index] == 1)
 
     logger.info ("")
 
@@ -389,12 +381,15 @@ def solve_shift_scheduling(params, output_proto):
     starting_request=sheet.worksheet('SRequest').get_all_values()
     del starting_request[0]
     for request in starting_request:
-        player_index= names.index(request[0])
-        shift_index = shifts.index(request[1])
-        logger.info("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
-        for d in range(5): # first 5 innings
-            obj_bool_vars.append(work[player_index, shift_index, d])
-            obj_bool_coeffs.append(-int(request[2])*2)
+        player_index= index_in_list(request[0],names,names_shorten)  ######
+        if player_index < 0:
+            print ("Sarting request %s for %s at %s ignored. Please check spelling." % (request[0], request[1], request[2]))
+        else:
+            shift_index = shifts.index(request[1])
+            logger.info("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
+            for d in range(5): # first 5 innings
+                obj_bool_vars.append(work[player_index, shift_index, d])
+                obj_bool_coeffs.append(-int(request[2])*2)
 
     logger.info ("")
 
@@ -405,12 +400,15 @@ def solve_shift_scheduling(params, output_proto):
     game_request=sheet.worksheet('GRequest').get_all_values()
     del game_request[0]
     for request in game_request:
-        player_index= names.index(request[0])
-        shift_index = shifts.index(request[1])
-        logger.info("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
-        for d in range(num_innings):
-            obj_bool_vars.append(work[player_index, shift_index, d])
-            obj_bool_coeffs.append(-int(request[2])*2)
+        player_index= index_in_list(request[0],names,names_shorten)  ######
+        if player_index < 0:
+            print ("Game request %s for %s at %s ignored. Please check spelling." % (request[0], request[1], request[2]))
+        else:
+            shift_index = shifts.index(request[1])
+            logger.info("%s %d %s %d %d" % (request[0], player_index, request[1], shift_index, int(request[2])))
+            for d in range(num_innings):
+                obj_bool_vars.append(work[player_index, shift_index, d])
+                obj_bool_coeffs.append(-int(request[2])*2)
 
     logger.info ("")
 
@@ -457,7 +455,7 @@ def solve_shift_scheduling(params, output_proto):
                     model.AddBoolOr(transition)
                     obj_bool_vars.append(trans_var)
                     obj_bool_coeffs.append(cost)
-
+    
     # Cover constraints
     for s in range(1, num_shifts):
         for w in range(num_games):
@@ -476,6 +474,48 @@ def solve_shift_scheduling(params, output_proto):
                     model.Add(excess == worked - min_demand)
                     obj_int_vars.append(excess)
                     obj_int_coeffs.append(over_penalty)
+    
+    # Player depth map 
+    """ an example of target depth_matrix
+    depth_map = [
+        [ 0, 1, 0, 0, 1, 0, 2, 0, 0, -1 ],      # 0 
+        [ 0, 2, 1, 0, 2, 0, 2, -1, 1, 0 ],      # 1 
+        [ 0, 1, 4, -1, 0, 0, 0, 0, -1, 0 ],      # 2
+        [ 0, 2, 3, 3, 0, 1, 0, -1, -1, -1 ],    # 3 
+        [ 0, 0, 0, 0, 0, 1, 0, 0, 0, 1 ],      # 4 
+        [ 0, 0, -1, -1, 0, 0, 0, 1, 1, 1 ],     # 5 
+        [ 0, 1, -1, -1, 0, 1, 0, 1, 1, 0 ],     # 6 
+        [ 0, -1, -1, -1, 2, 0, -1, 1, -1, 1 ],   # 7
+        [ 0, 2, 0, -1, 0, 1, 2, 0, 1, 0 ],      # 8 
+        [ 0, 2, -1, 0, 0, 2, 0, 0, -1, 1 ],      # 9 
+        [ 0, 1, -1, 3, -1, -1, -1, 0, -1, 1 ],   # 10 
+        [ 0, 0, 0, -1, 2, -1, 1, 1, 1, 0 ]       # 11 
+    ]
+    """
+    logger.info ("Depth Matrix by batting order")
+
+    for player in names:
+        player_index_in_matrix=index_in_list(player,depth_chart_list,depth_chart_list_shorten)
+        logger.info ("player %s index_in_matrix = %d" % (player, player_index_in_matrix))
+        if player_index_in_matrix < 0:
+            print ("Cannot find player %s in the depth matrix. Please check spelling. Depth information ignored." % (player))
+        else:
+            player_index_in_batting_order= names.index(player)
+            logger.info(depth_matrix[player_index_in_matrix])
+            for s in range(num_shifts): 
+                w = int(depth_matrix[player_index_in_matrix][s+1])
+                if w > 0: 
+                    for d in range(num_innings):
+                        obj_bool_vars.append(work[player_index_in_batting_order, s, d])
+                        obj_bool_coeffs.append((-2)*w)
+                        #logger.info ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
+                elif w < 0:
+                    for d in range(num_innings):
+                        obj_bool_vars.append(work[player_index_in_batting_order, s, d])
+                        obj_bool_coeffs.append((-4)*w)
+                        #logger.info ("%d %d %d %d" % (player_index_in_batting_order, s, d, w))
+
+    logger.info ("")
 
     # Objective
     model.Minimize(
