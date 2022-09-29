@@ -268,7 +268,7 @@ def solve_shift_scheduling(params, output_proto):
     shift_constraints = [
         # No two consecutive innings for DH 
         (0, 1, 1, 1, 1, 7, 2),
-        (2, 0, 3, 2, 3, 7, 1),
+        (2, 1, 3, 2, 3, 7, 1),
         # No two consecutive innings for same IF position 
         (3, 1, 1, 0, 1, 1, 0),
         (4, 1, 1, 0, 1, 1, 0),
